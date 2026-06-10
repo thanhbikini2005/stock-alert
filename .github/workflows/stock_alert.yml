@@ -1,5 +1,4 @@
 name: Stock Price Alert
-
 on:
   schedule:
     - cron: "0,30 2-8 * * 1-5"
