@@ -1,6 +1,8 @@
 # Stock alert bot - auto run via GitHub Actions
 import os
+import time
 import requests
+from datetime import datetime, timedelta
 
 STOCKS = [
     ("FPT",  65000,   68000),
@@ -13,32 +15,44 @@ TELEGRAM_TOKEN = os.environ["TELEGRAM_TOKEN"]
 TELEGRAM_CHAT_ID = os.environ["TELEGRAM_CHAT_ID"]
 
 def get_data(symbol):
-    ticker = f"{symbol}.VN"
-    url = f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}?interval=1d&range=6d"
-    headers = {"User-Agent": "Mozilla/5.0"}
     try:
+        now = int(time.time())
+        from_ts = now - 7 * 24 * 3600  # 7 ngày trước
+
+        url = (
+            f"https://apipubaws.tcbs.com.vn/stock-insight/v2/stock/his-price"
+            f"?ticker={symbol}&resolution=D&from={from_ts}&to={now}"
+        )
+        headers = {
+            "User-Agent": "Mozilla/5.0",
+            "Accept": "application/json",
+        }
         r = requests.get(url, headers=headers, timeout=10)
         d = r.json()
-        result = d["chart"]["result"][0]
-        meta = result["meta"]
-        volumes = result["indicators"]["quote"][0]["volume"]
 
-        price = float(meta["regularMarketPrice"])
-        prev_close = float(meta.get("chartPreviousClose", price))
-        change_pct = ((price - prev_close) / prev_close) * 100 if prev_close else 0
+        bars = d.get("data", [])
+        if not bars or len(bars) < 2:
+            print(f"{symbol}: khong du du lieu TCBS")
+            return None
 
-        # Lấy KL hôm nay trực tiếp từ meta (chính xác hơn)
-        volume_today = int(meta.get("regularMarketVolume", 0))
+        # Ngày gần nhất = bars[-1], ngày hôm trước = bars[-2]
+        today = bars[-1]
+        prev   = bars[-2]
 
-        # Tính avg từ các ngày trước (bỏ ngày hôm nay ra)
-        past_vols = [v for v in volumes[:-1] if v and v > 0]
+        price       = float(today["close"])
+        prev_close  = float(prev["close"])
+        change_pct  = ((price - prev_close) / prev_close) * 100 if prev_close else 0
+        volume_today = int(today["volume"])
+
+        # Avg KL từ các ngày trước (bỏ hôm nay)
+        past_vols = [int(b["volume"]) for b in bars[:-1] if b.get("volume")]
         avg_volume = int(sum(past_vols) / len(past_vols)) if past_vols else 0
 
         return {
             "price": price,
             "change_pct": change_pct,
             "volume_today": volume_today,
-            "avg_volume": avg_volume
+            "avg_volume": avg_volume,
         }
     except Exception as e:
         print(f"Loi {symbol}: {e}")
@@ -90,14 +104,14 @@ def main():
             lines.append(f"❓ <b>{symbol}</b>: khong lay duoc gia")
             continue
 
-        price = data["price"]
-        change_pct = data["change_pct"]
+        price        = data["price"]
+        change_pct   = data["change_pct"]
         volume_today = data["volume_today"]
-        avg_volume = data["avg_volume"]
-        change_str = f"{change_pct:+.1f}%"
-        dist_pct = ((price - target_low) / target_low) * 100
-        vol_line = vol_info(volume_today, avg_volume)
-        act_line = action_info(change_pct, volume_today, avg_volume)
+        avg_volume   = data["avg_volume"]
+        change_str   = f"{change_pct:+.1f}%"
+        dist_pct     = ((price - target_low) / target_low) * 100
+        vol_line     = vol_info(volume_today, avg_volume)
+        act_line     = action_info(change_pct, volume_today, avg_volume)
 
         if price <= target_low:
             alert_count += 1
@@ -125,16 +139,16 @@ def main():
             )
 
     if alert_count > 0 and warn_count > 0:
-        h_icon = "✅" * alert_count + "⚠️" * warn_count
+        h_icon   = "✅" * alert_count + "⚠️" * warn_count
         h_status = f"<b>{alert_count} MA VAO VUNG MUA  +  {warn_count} MA SAP TOI</b>"
     elif alert_count > 0:
-        h_icon = "✅" * alert_count
+        h_icon   = "✅" * alert_count
         h_status = f"<b>{alert_count} MA DA VAO VUNG MUA!</b>"
     elif warn_count > 0:
-        h_icon = "⚠️" * warn_count
+        h_icon   = "⚠️" * warn_count
         h_status = f"<b>{warn_count} MA SAP CHAM NGUONG!</b>"
     else:
-        h_icon = "📈"
+        h_icon   = "📈"
         h_status = "Tat ca binh thuong"
 
     header = (
