@@ -1,0 +1,28 @@
+name: Stock Price Alert
+
+on:
+  schedule:
+    - cron: "0,30 2-8 * * 1-5"
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+jobs:
+  check-stocks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install requests
+
+      - name: Run stock alert
+        env:
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python check_stocks.py
