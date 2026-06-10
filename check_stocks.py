@@ -14,7 +14,7 @@ TELEGRAM_CHAT_ID = os.environ["TELEGRAM_CHAT_ID"]
 
 def get_data(symbol):
     ticker = f"{symbol}.VN"
-    url = f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}?interval=1d&range=5d"
+    url = f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}?interval=1d&range=6d"
     headers = {"User-Agent": "Mozilla/5.0"}
     try:
         r = requests.get(url, headers=headers, timeout=10)
@@ -22,13 +22,24 @@ def get_data(symbol):
         result = d["chart"]["result"][0]
         meta = result["meta"]
         volumes = result["indicators"]["quote"][0]["volume"]
+
         price = float(meta["regularMarketPrice"])
         prev_close = float(meta.get("chartPreviousClose", price))
         change_pct = ((price - prev_close) / prev_close) * 100 if prev_close else 0
-        valid_vols = [v for v in volumes if v]
-        volume_today = int(volumes[-1]) if volumes[-1] else 0
-        avg_volume = int(sum(valid_vols) / len(valid_vols)) if valid_vols else 0
-        return {"price": price, "change_pct": change_pct, "volume_today": volume_today, "avg_volume": avg_volume}
+
+        # Lấy KL hôm nay trực tiếp từ meta (chính xác hơn)
+        volume_today = int(meta.get("regularMarketVolume", 0))
+
+        # Tính avg từ các ngày trước (bỏ ngày hôm nay ra)
+        past_vols = [v for v in volumes[:-1] if v and v > 0]
+        avg_volume = int(sum(past_vols) / len(past_vols)) if past_vols else 0
+
+        return {
+            "price": price,
+            "change_pct": change_pct,
+            "volume_today": volume_today,
+            "avg_volume": avg_volume
+        }
     except Exception as e:
         print(f"Loi {symbol}: {e}")
     return None
